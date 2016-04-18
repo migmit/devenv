@@ -1,0 +1,29 @@
+basedir: /Users/mikhail/src
+targets:
+  core:
+    directory: kinja-core
+    dependencies:
+      - profile
+    shell: sbt -Dconfig.file=conf/application-dbdev-eu.conf clean compile test 'run 9001'
+    wait:
+      port: 9001
+    init: curl -f 'http://apilocal.kinja.dev:9001/api/core/post/1673191330'
+    title: core
+    error: error-core
+  profile:
+    directory: kinja-profile
+    shell: sbt -Dconfig.file=conf/application-dbdev-eu.conf clean compile test 'run 9040'
+    wait:
+      port: 9040
+    init: curl -f 'http://apilocal.kinja.dev:9040/api/profile/user/5756194420839655003'
+    error: error-profile
+  mantle:
+    directory: kinja-mantle
+    dependencies:
+      - core
+    shell: sbt -Dconfig.file=conf/application-coredev.conf clean compile test 'run 9000'
+    wait:
+      port: 9000
+    pause: 60
+    init: curl -f 'http://migmit-kinja.kinja.dev:9000/'
+    error: error-mantle

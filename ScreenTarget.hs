@@ -8,7 +8,7 @@ import System.Environment (getExecutablePath)
 import System.Exit (ExitCode(ExitSuccess))
 import System.FilePath ((</>))
 import System.IO (IOMode(WriteMode), hClose, openFile)
-import System.Process (StdStream(CreatePipe), callProcess, createProcess, proc, std_err, std_out, waitForProcess)
+import System.Process (callProcess, readProcessWithExitCode)
 
 import FailureOr
 import Target
@@ -74,10 +74,8 @@ instance IsTarget ScreenTarget where
                             merr <-
                                 forM (targetInit target) $ \t ->
                                     do putStrLn $ name ++ "> init: " ++ t
-                                       let cp = proc "bash" ["-c", t]
-                                       let cps = cp {std_out = CreatePipe, std_err = CreatePipe}
-                                       (_, _, _, ph) <- createProcess cps
-                                       waitForProcess ph
+                                       (e, _, _) <- readProcessWithExitCode "bash" ["-c", t] ""
+                                       return e
                             if fromMaybe ExitSuccess merr == ExitSuccess
                             then return ExecResult {erContinue = True, erDetails = ERDOK}
                             else return ExecResult {erContinue = False, erDetails = ERDFailed}

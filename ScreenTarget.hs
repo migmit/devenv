@@ -2,14 +2,13 @@ module ScreenTarget where
 import Control.Concurrent (threadDelay)
 import Control.Monad (forM, forM_)
 import Data.Maybe (fromMaybe)
-import qualified Data.Set as S (Set, fromList)
+import Data.Set (Set, fromList)
 import System.Directory (doesDirectoryExist, doesFileExist, removeFile)
 import System.Environment (getExecutablePath)
 import System.Exit (ExitCode(ExitSuccess))
 import System.FilePath ((</>))
 import System.IO (IOMode(WriteMode), hClose, openFile)
-import System.Process
-        (StdStream(CreatePipe), callProcess, createProcess, proc, std_out, waitForProcess)
+import System.Process (StdStream(CreatePipe), callProcess, createProcess, proc, std_err, std_out, waitForProcess)
 
 import FailureOr
 import Target
@@ -19,7 +18,7 @@ import Yaml
 type CommandLine = String
 data ScreenTarget = ScreenTarget {
       targetDirectory :: FilePath,
-      targetDependencies :: S.Set TargetName,
+      targetDependencies :: Set TargetName,
       targetShell :: CommandLine,
       targetWait :: [Wait],
       targetInit :: Maybe CommandLine,
@@ -41,7 +40,7 @@ instance IsTarget ScreenTarget where
            let dir = baseDir </> directory
            return ScreenTarget {
                         targetDirectory = dir,
-                        targetDependencies = S.fromList deps,
+                        targetDependencies = fromList deps,
                         targetShell = shell,
                         targetWait = wait,
                         targetInit = tInit,
@@ -76,7 +75,8 @@ instance IsTarget ScreenTarget where
                                 forM (targetInit target) $ \t ->
                                     do putStrLn $ name ++ "> init: " ++ t
                                        let cp = proc "bash" ["-c", t]
-                                       (_, _, _, ph) <- createProcess cp {std_out = CreatePipe}
+                                       let cps = cp {std_out = CreatePipe, std_err = CreatePipe}
+                                       (_, _, _, ph) <- createProcess cps
                                        waitForProcess ph
                             if fromMaybe ExitSuccess merr == ExitSuccess
                             then return ExecResult {erContinue = True, erDetails = ERDOK}

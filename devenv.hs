@@ -15,38 +15,45 @@ import System.Exit (ExitCode(ExitSuccess), exitWith)
 import System.FilePath (takeDirectory, (</>))
 import System.IO (BufferMode(NoBuffering), hSetBuffering, stdin)
 import System.Process
-    (StdStream(CreatePipe), callProcess, createProcess, cwd, proc, std_out, waitForProcess)
+    (callProcess, createProcess, cwd, proc, readProcessWithExitCode, waitForProcess)
 
-import FailureOr (FailureOr, guardIO, orErr, recoverFromFailure, runFailureOr)
+import FailureOr
 import Yaml
 import ScreenTarget (ScreenTarget)
 import Target
 
-data Config = Config {configTargets :: M.Map TargetName Target}
+data Config = Config {
+      configInit :: Maybe String,
+      configTargets :: M.Map TargetName Target
+    }
 
-yamlToConfig :: YamlLight -> FilePath -> FailureOr Config
-yamlToConfig yaml configFile =
+yamlToConfig :: [String] -> YamlLight -> FilePath -> FailureOr Config
+yamlToConfig overrides yaml configFile =
     do firstMap <- orErr "not a map" $ unMap yaml
+       let realOverrides = fromMaybe M.empty $ getMapValue firstMap "overrides"
+       let overridesList = getOverridesList overrides realOverrides
+       let requiredFields = ["basedir", "init"]
+       let firstMapCorrected = foldl (overrideFields requiredFields) firstMap overridesList
        let fileDirName = takeDirectory configFile
-       let baseName = recoverFromFailure "" $ getStringValue firstMap "basedir"
+       let baseName = recoverFromFailure "" $ getStringValue firstMapCorrected "basedir"
+       let confInit = recoverMaybe $ getStringValue firstMapCorrected "init"
        secondMap <- orErr "no targets" $ getMapValue firstMap "targets"
        targetsList <-
            flip M.foldMapWithKey secondMap $ \yamlKey yamlTarget ->
                do keyBS <- orErr "key is not a string" $ unStr yamlKey
                   let key = U.toString keyBS
                   target <- orErr ("target " ++ key ++ " is not a map") $ unMap yamlTarget
-                  result <- readYamlTarget key (fileDirName </> baseName) target
+                  result <- readYamlTarget overrides key (fileDirName </> baseName) target
                   return $ M.singleton key (Target (result :: ScreenTarget))
-       return $ Config {configTargets = targetsList}
+       return $ Config {configInit = confInit, configTargets = targetsList}
                           
-readConfig :: FilePath -> IO (FailureOr Config)
-readConfig configFile =
+readConfig :: [String] -> FilePath -> IO (FailureOr Config)
+readConfig overrides configFile =
     do yamlOrErr <- tryJust exceptionToReadYamlError $ parseYamlFile configFile
        case yamlOrErr of
          Left FileDoesNotExist -> return $ fail $ "file " ++ configFile ++ "doesn't exist"
          Left (YamlParsingError s) -> return $ fail $ "parsing error: " ++ s
-         Right yaml ->
-             return $ yamlToConfig yaml configFile
+         Right yaml -> return $ yamlToConfig overrides yaml configFile
 
 getTargetList :: Config -> S.Set TargetName -> FailureOr [(TargetName, Target)]
 getTargetList config targets =
@@ -116,15 +123,15 @@ startTargets sessionName config runOptions =
 
 checkSession :: String -> IO Bool
 checkSession sessionName =
-    do let cp = proc "screen" ["-S", sessionName, "-X", "select", "."]
-       (_, _, _, ph) <- createProcess $ cp {std_out = CreatePipe}
-       exitCode <- waitForProcess ph
+    do let screenArgs = ["-S", sessionName, "-X", "select", "."]
+       (exitCode, _, _) <- readProcessWithExitCode "screen" screenArgs ""
        return $ exitCode == ExitSuccess
 
 data ProgramOptions =
     ProgramOptions {
       optConfigFile :: Maybe FilePath,
       optSessionName :: Maybe String,
+      optOverrides :: [String],
       optOperation :: OperationMode
     }
 
@@ -158,6 +165,9 @@ runHelpMessage = "Don't run target dependencies"
 addHelpMessage :: String
 addHelpMessage = "Add to running session"
 
+overHelpMessage :: String
+overHelpMessage = "Use overridden values"
+
 runOptionsParser :: O.Parser RunOptions
 runOptionsParser =
     RunOptions <$>
@@ -172,6 +182,8 @@ optionsParser =
          (O.strOption (O.short 'f' <> O.metavar "CONFIG" <> O.help configHelpMessage)) <*>
     O.optional
          (O.strOption (O.short 's' <> O.metavar "SESSION" <> O.help sessionHelpMessage)) <*>
+    O.many
+         (O.strOption (O.short '@' <> O.metavar "OVERRIDE" <> O.help overHelpMessage)) <*>
     (
      RunMode <$> runOptionsParser
      <|> KillMode <$ O.flag' () (O.short 'k' <> O.help "Kill everything and clean up")
@@ -219,13 +231,16 @@ userProcessing options =
        let configFile = fromMaybe (homeDir </> ".devenv.yml") $ optConfigFile options
        let sessionName = fromMaybe "devenv" $ optSessionName options
        sessionExists <- checkSession sessionName
-       eConfig <- readConfig configFile
+       eConfig <- readConfig (optOverrides options) configFile
        config <- runFailureOr eConfig
        case optOperation options of
          RunMode runOptions ->
              do guardIO (checkConfigForLoops config) "loops in config"
                 notExisting <- checkConfigDirectories config
                 maybeError notExisting id
+                forM_ (configInit config) $ \i ->
+                    do (e, _, _) <- readProcessWithExitCode "bash" ["-c", i] ""
+                       guardIO (e == ExitSuccess) "failed on global init"
                 startTargets sessionName config runOptions
          KillMode -> cleanUp sessionName sessionExists config
 

@@ -1,7 +1,8 @@
 module Yaml where
 import Control.Exception (IOException)
 import qualified Data.ByteString.UTF8 as U (fromString, toString)
-import qualified Data.Map as M (Map, foldlWithKey, lookup)
+import qualified Data.Map as M (Map, foldlWithKey, insert, lookup)
+import Data.Maybe (catMaybes)
 import Data.Yaml.YamlLight (YamlLight(YStr), unMap, unSeq, unStr)
 import System.IO.Error (ioeGetErrorString, isDoesNotExistError, isUserError)
 import Text.Read (readMaybe)
@@ -39,6 +40,23 @@ getMapValue :: M.Map YamlLight YamlLight -> String -> Maybe (M.Map YamlLight Yam
 getMapValue yamlMap key =
     do yamlValue <- M.lookup (YStr $ U.fromString key) yamlMap
        unMap yamlValue
+
+getOverridesList :: [String] -> M.Map YamlLight YamlLight -> [M.Map YamlLight YamlLight]
+getOverridesList overrides realOverrides =
+    catMaybes $ map getOverride overrides where
+        getOverride o = M.lookup (YStr $ U.fromString o) realOverrides >>= unMap
+
+overrideFields
+    :: [String]
+    -> M.Map YamlLight YamlLight
+    -> M.Map YamlLight YamlLight
+    -> M.Map YamlLight YamlLight
+overrideFields fieldNames first second = foldl overrideField first fieldNames where
+    overrideField config field =
+        let yField = YStr $ U.fromString field in
+        case M.lookup yField second of
+          Nothing -> config
+          Just v -> M.insert yField v config
 
 readWait :: M.Map YamlLight YamlLight -> Maybe [Wait]
 readWait =

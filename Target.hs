@@ -12,7 +12,8 @@ data ExecResultDetails = ERDOK | ERDFailed | ERDFailedInit | ERDAlreadyRuns
 data ExecResult = ExecResult {erContinue :: Bool, erDetails :: ExecResultDetails}
 
 class Show t => IsTarget t where
-    readYamlTarget :: TargetName -> FilePath -> Map YamlLight YamlLight -> FailureOr t
+    readYamlTarget ::
+        [String] -> TargetName -> FilePath -> Map YamlLight YamlLight -> FailureOr t
     dependencies :: t -> Set TargetName
     checkTarget :: t -> TargetName -> IO (Maybe String)
     executeOneTarget :: Bool -> Bool -> String -> TargetName -> t -> IO ExecResult

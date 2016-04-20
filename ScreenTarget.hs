@@ -2,6 +2,7 @@ module ScreenTarget where
 import Control.Concurrent (threadDelay)
 import Control.Monad (forM, forM_)
 import Data.Maybe (fromMaybe)
+import qualified Data.Map as M (empty)
 import Data.Set (Set, fromList)
 import System.Directory (doesDirectoryExist, doesFileExist, removeFile)
 import System.Environment (getExecutablePath)
@@ -27,16 +28,23 @@ data ScreenTarget = ScreenTarget {
       targetPause :: Maybe Int
     } deriving Show
 
+requiredFields :: [String]
+requiredFields =
+    ["directory", "shell", "pause", "title", "dependencies", "wait", "init", "error"]
+
 instance IsTarget ScreenTarget where
-    readYamlTarget key baseDir yamlMap =
-        do directory <- getStringValue yamlMap "directory"
-           shell <- getStringValue yamlMap "shell"
-           let pause = recoverMaybe $ getIntValue yamlMap "pause"
-           let title = recoverFromFailure key $ getStringValue yamlMap "title"
-           let deps = fromMaybe [] $ getStrings yamlMap "dependencies"
-           let wait = fromMaybe [] $ getMapValue yamlMap "wait" >>= readWait
-           let tInit = recoverMaybe $ getStringValue yamlMap "init"
-           let err = recoverMaybe $ getStringValue yamlMap "error"
+    readYamlTarget overrides key baseDir yamlMap =
+        do let realOverrides = fromMaybe M.empty $ getMapValue yamlMap "overrides"
+           let overridesList = getOverridesList overrides realOverrides
+           let yamlMapCorrected = foldl (overrideFields requiredFields) yamlMap overridesList
+           directory <- getStringValue yamlMapCorrected "directory"
+           shell <- getStringValue yamlMapCorrected "shell"
+           let pause = recoverMaybe $ getIntValue yamlMapCorrected "pause"
+           let title = recoverFromFailure key $ getStringValue yamlMapCorrected "title"
+           let deps = fromMaybe [] $ getStrings yamlMapCorrected "dependencies"
+           let wait = fromMaybe [] $ getMapValue yamlMapCorrected "wait" >>= readWait
+           let tInit = recoverMaybe $ getStringValue yamlMapCorrected "init"
+           let err = recoverMaybe $ getStringValue yamlMapCorrected "error"
            let dir = baseDir </> directory
            return ScreenTarget {
                         targetDirectory = dir,

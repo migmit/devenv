@@ -51,7 +51,7 @@ readConfig :: [String] -> FilePath -> IO (FailureOr Config)
 readConfig overrides configFile =
     do yamlOrErr <- tryJust exceptionToReadYamlError $ parseYamlFile configFile
        case yamlOrErr of
-         Left FileDoesNotExist -> return $ fail $ "file " ++ configFile ++ "doesn't exist"
+         Left FileDoesNotExist -> return $ fail $ "file " ++ configFile ++ " doesn't exist"
          Left (YamlParsingError s) -> return $ fail $ "parsing error: " ++ s
          Right yaml -> return $ yamlToConfig overrides yaml configFile
 

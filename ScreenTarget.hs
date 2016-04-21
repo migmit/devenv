@@ -2,7 +2,6 @@ module ScreenTarget where
 import Control.Concurrent (threadDelay)
 import Control.Monad (forM, forM_)
 import Data.Maybe (fromMaybe)
-import qualified Data.Map as M (empty)
 import Data.Set (Set, fromList)
 import System.Directory (doesDirectoryExist, doesFileExist, removeFile)
 import System.Environment (getExecutablePath)
@@ -33,18 +32,15 @@ requiredFields =
     ["directory", "shell", "pause", "title", "dependencies", "wait", "init", "error"]
 
 instance IsTarget ScreenTarget where
-    readYamlTarget overrides key baseDir yamlMap =
-        do let realOverrides = fromMaybe M.empty $ getMapValue yamlMap "overrides"
-           let overridesList = getOverridesList overrides realOverrides
-           let yamlMapCorrected = foldl (overrideFields requiredFields) yamlMap overridesList
-           directory <- getStringValue yamlMapCorrected "directory"
-           shell <- getStringValue yamlMapCorrected "shell"
-           let pause = recoverMaybe $ getIntValue yamlMapCorrected "pause"
-           let title = recoverFromFailure key $ getStringValue yamlMapCorrected "title"
-           let deps = fromMaybe [] $ getStrings yamlMapCorrected "dependencies"
-           let wait = fromMaybe [] $ getMapValue yamlMapCorrected "wait" >>= readWait
-           let tInit = recoverMaybe $ getStringValue yamlMapCorrected "init"
-           let err = recoverMaybe $ getStringValue yamlMapCorrected "error"
+    readYamlTarget key baseDir yamlMap =
+        do directory <- yamlGetString yamlMap "directory"
+           shell <- yamlGetString yamlMap "shell"
+           pause <- recoverMaybeYamlM $ yamlGetInt yamlMap "pause"
+           title <- recoverYamlM key $ yamlGetString yamlMap "title"
+           deps <- recoverYamlM [] $ yamlGetStrings yamlMap "dependencies"
+           wait <- recoverYamlM [] $ yamlGetMap yamlMap "wait" >>= readWaits
+           tInit <- recoverMaybeYamlM $ yamlGetString yamlMap "init"
+           err <- recoverMaybeYamlM $ yamlGetString yamlMap "error"
            let dir = baseDir </> directory
            return ScreenTarget {
                         targetDirectory = dir,

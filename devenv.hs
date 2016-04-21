@@ -1,13 +1,10 @@
 {-# LANGUAGE DeriveFunctor, GADTs #-}
 module Main(main) where
-
 import Control.Monad (forM, forM_, when)
-import Control.Exception (throwIO, tryJust)
-import qualified Data.ByteString.UTF8 as U (toString)
+import Control.Exception (throwIO)
 import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
 import qualified Data.Set as S (Set, empty, fromList, insert, isSubsetOf, member, toList)
-import Data.Yaml.YamlLight (YamlLight, parseYamlFile, unMap, unStr)
 import qualified Options.Applicative as O
 import Options.Applicative ((<>), (<|>))
 import System.Directory (getHomeDirectory, removeFile)
@@ -27,33 +24,27 @@ data Config = Config {
       configTargets :: M.Map TargetName Target
     }
 
-yamlToConfig :: [String] -> YamlLight -> FilePath -> FailureOr Config
-yamlToConfig overrides yaml configFile =
-    do firstMap <- orErr "not a map" $ unMap yaml
-       let realOverrides = fromMaybe M.empty $ getMapValue firstMap "overrides"
-       let overridesList = getOverridesList overrides realOverrides
-       let requiredFields = ["basedir", "init"]
-       let firstMapCorrected = foldl (overrideFields requiredFields) firstMap overridesList
-       let fileDirName = takeDirectory configFile
-       let baseName = recoverFromFailure "" $ getStringValue firstMapCorrected "basedir"
-       let confInit = recoverMaybe $ getStringValue firstMapCorrected "init"
-       secondMap <- orErr "no targets" $ getMapValue firstMap "targets"
+yamlToConfig :: FilePath -> YamlMap -> YamlM Config
+yamlToConfig configFile firstMap =
+    do let fileDirName = takeDirectory configFile
+       baseName <- recoverYamlM "" $ yamlGetString firstMap "basedir"
+       confInit <- recoverMaybeYamlM $ yamlGetString firstMap "init"
+       secondMap <- yamlGetMap firstMap "targets"
+       let targetNames = yamlGetKeys secondMap
        targetsList <-
-           flip M.foldMapWithKey secondMap $ \yamlKey yamlTarget ->
-               do keyBS <- orErr "key is not a string" $ unStr yamlKey
-                  let key = U.toString keyBS
-                  target <- orErr ("target " ++ key ++ " is not a map") $ unMap yamlTarget
-                  result <- readYamlTarget overrides key (fileDirName </> baseName) target
-                  return $ M.singleton key (Target (result :: ScreenTarget))
-       return $ Config {configInit = confInit, configTargets = targetsList}
+           forM targetNames $ \yamlKey ->
+               do yamlTarget <- yamlGetMap secondMap yamlKey
+                  target <- readYamlTarget yamlKey (fileDirName </> baseName) yamlTarget
+                  return (yamlKey, Target (target :: ScreenTarget))
+       return $ Config {configInit = confInit, configTargets = M.fromList targetsList}
                           
-readConfig :: [String] -> FilePath -> IO (FailureOr Config)
-readConfig overrides configFile =
-    do yamlOrErr <- tryJust exceptionToReadYamlError $ parseYamlFile configFile
+readConfig :: FilePath -> IO (YamlM Config)
+readConfig configFile =
+    do yamlOrErr <- yamlParseFile configFile
        case yamlOrErr of
          Left FileDoesNotExist -> return $ fail $ "file " ++ configFile ++ " doesn't exist"
          Left (YamlParsingError s) -> return $ fail $ "parsing error: " ++ s
-         Right yaml -> return $ yamlToConfig overrides yaml configFile
+         Right yaml -> return $ yaml >>= yamlToConfig configFile
 
 getTargetList :: Config -> S.Set TargetName -> FailureOr [(TargetName, Target)]
 getTargetList config targets =
@@ -231,8 +222,8 @@ userProcessing options =
        let configFile = fromMaybe (homeDir </> ".devenv.yml") $ optConfigFile options
        let sessionName = fromMaybe "devenv" $ optSessionName options
        sessionExists <- checkSession sessionName
-       eConfig <- readConfig (optOverrides options) configFile
-       config <- runFailureOr eConfig
+       eConfig <- readConfig configFile
+       config <- runFailureOr $ runYamlM eConfig $ optOverrides options
        case optOperation options of
          RunMode runOptions ->
              do guardIO (checkConfigForLoops config) "loops in config"

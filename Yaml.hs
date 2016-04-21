@@ -1,14 +1,100 @@
-module Yaml where
-import Control.Exception (IOException)
+module Yaml(
+            ReadYamlError(FileDoesNotExist, YamlParsingError),
+            YamlM, YamlMap,
+            recoverMaybeYamlM, recoverYamlM, runYamlM,
+            yamlGetInt, yamlGetKeys, yamlGetMap, yamlGetString, yamlGetStrings, yamlParseFile
+           ) where
+import Control.Exception (IOException, tryJust)
+import Control.Monad (MonadPlus(mzero, mplus))
+import Control.Monad.Trans
+import Control.Monad.Trans.Reader
 import qualified Data.ByteString.UTF8 as U (fromString, toString)
-import qualified Data.Map as M (Map, foldlWithKey, insert, lookup)
-import Data.Maybe (catMaybes)
-import Data.Yaml.YamlLight (YamlLight(YStr), unMap, unSeq, unStr)
+import qualified Data.Map as M (Map, empty, keys, lookup, union)
+import Data.Maybe (catMaybes, fromMaybe)
+import Data.Yaml.YamlLight (YamlLight(YStr), parseYamlFile, unMap, unSeq, unStr)
 import System.IO.Error (ioeGetErrorString, isDoesNotExistError, isUserError)
 import Text.Read (readMaybe)
 
 import FailureOr
-import Wait
+
+type OverrideName = String
+type Variables = M.Map YamlLight YamlLight
+
+emptyVariables :: Variables
+emptyVariables = M.empty
+                  
+data YamlMap = YamlMap {yamlVars :: Variables, yamlMap :: M.Map YamlLight YamlLight}
+
+type YamlM = ReaderT [OverrideName] FailureOr
+runYamlM :: YamlM a -> [OverrideName] -> FailureOr a
+runYamlM = runReaderT
+recoverYamlM :: a -> YamlM a -> YamlM a
+recoverYamlM a = mapReaderT $ return . recoverFromFailure a
+recoverMaybeYamlM :: YamlM a -> YamlM (Maybe a)
+recoverMaybeYamlM = recoverYamlM Nothing . fmap Just
+
+substitute :: Variables -> String -> YamlM String
+substitute _ [] = return []
+substitute vars ('{':xs) =
+    case span (/= '}') xs of
+      (_, "") -> return $ '{':xs
+      (name, _:xs') ->
+          do ySubst <- recoverMaybeYamlM $ yamlLookupKey vars name
+             let value = fromMaybe ('{' : name ++ "}") $ fmap U.toString $ ySubst >>= unStr
+             fmap (value ++) $ substitute vars xs'
+substitute vars (x:xs) = fmap (x :) $ substitute vars xs
+
+yKey :: String -> YamlLight
+yKey = YStr . U.fromString
+
+yamlLookupKey :: M.Map YamlLight YamlLight -> String -> YamlM YamlLight
+yamlLookupKey kvMap key =
+    do let readMap mp name = M.lookup (yKey name) mp >>= unMap
+           allOverrides = fromMaybe M.empty $ readMap kvMap "overrides"
+       overrides <- asks $ catMaybes . map (readMap allOverrides)
+       let maybeResult = foldr (\o r -> r `mplus` M.lookup (yKey key) o) mzero (kvMap : overrides)
+       lift $ orErr ("key " ++ key ++ " not found") maybeResult
+
+yamlGetString :: YamlMap -> String -> YamlM String
+yamlGetString yMap key =
+    do yVal <- yamlLookupKey (yamlMap yMap) key
+       bsValue <- lift $ orErr ("value for key " ++ key ++ " is not a string") $ unStr yVal
+       substitute (yamlVars yMap) $ U.toString bsValue
+
+yamlGetInt :: YamlMap -> String -> YamlM Int
+yamlGetInt yMap key =
+    do stringVal <- yamlGetString yMap key
+       lift $ orErr ("not a number: " ++ stringVal) $ readMaybe stringVal
+
+yamlGetStrings :: YamlMap -> String -> YamlM [String]
+yamlGetStrings yMap key =
+    do yVal <- yamlLookupKey (yamlMap yMap) key
+       seqVal <- lift $ orErr ("value for key " ++ key ++ " is not a sequence") $ unSeq yVal
+       let readStr v =
+               lift $ orErr ("one of the values under " ++ key ++ " is not a string") $ unStr v
+       values <- sequence $ map readStr seqVal
+       mapM (substitute (yamlVars yMap) . U.toString) values
+
+yamlMakeMap :: String -> YamlLight -> Variables -> YamlM YamlMap
+yamlMakeMap errorMessage yVal vars =
+    do mapVal <- lift $ orErr errorMessage $ unMap yVal
+       mNewVars <- recoverYamlM Nothing $ fmap unMap $ yamlLookupKey mapVal "variables"
+       return YamlMap {yamlVars = M.union (fromMaybe M.empty mNewVars) vars, yamlMap = mapVal}
+
+yamlGetMap :: YamlMap -> String -> YamlM YamlMap
+yamlGetMap yMap key =
+    do yVal <- yamlLookupKey (yamlMap yMap) key
+       yamlMakeMap ("value for key " ++ key ++ " is not a map") yVal (yamlVars yMap)
+
+initYamlMap :: YamlLight -> YamlM YamlMap
+initYamlMap yVal = yamlMakeMap "yaml provided is not a map" yVal emptyVariables
+
+yamlParseFile :: FilePath -> IO (Either ReadYamlError (YamlM YamlMap))
+yamlParseFile file =
+    fmap (fmap initYamlMap) $ tryJust exceptionToReadYamlError $ parseYamlFile file
+
+yamlGetKeys :: YamlMap -> [String]
+yamlGetKeys = catMaybes . map (fmap U.toString . unStr) . M.keys . yamlMap
 
 data ReadYamlError = FileDoesNotExist | YamlParsingError String
 exceptionToReadYamlError :: IOException -> Maybe ReadYamlError
@@ -16,58 +102,3 @@ exceptionToReadYamlError ioe =
     if isDoesNotExistError ioe then Just FileDoesNotExist
     else if isUserError ioe then Just $ YamlParsingError (ioeGetErrorString ioe)
          else Nothing
-
-getStringValue :: M.Map YamlLight YamlLight -> String -> FailureOr String
-getStringValue yamlMap key =
-    do yamlValue <-
-           orErr ("key " ++ key ++ " not found") $ M.lookup (YStr $ U.fromString key) yamlMap
-       bsValue <- orErr ("value for key " ++ key ++ " isn't a string") $ unStr yamlValue
-       return $ U.toString bsValue
-
-getIntValue :: M.Map YamlLight YamlLight -> String -> FailureOr Int
-getIntValue yamlMap key =
-    do stringValue <- getStringValue yamlMap key
-       orErr ("not a number: " ++ stringValue) $ readMaybe stringValue
-
-getStrings :: M.Map YamlLight YamlLight -> String -> Maybe [String]
-getStrings yamlMap key =
-    do yamlValue <- M.lookup (YStr $ U.fromString key) yamlMap
-       seqValue <- unSeq yamlValue
-       values <- sequence $ map unStr seqValue
-       return $ map U.toString values
-
-getMapValue :: M.Map YamlLight YamlLight -> String -> Maybe (M.Map YamlLight YamlLight)
-getMapValue yamlMap key =
-    do yamlValue <- M.lookup (YStr $ U.fromString key) yamlMap
-       unMap yamlValue
-
-getOverridesList :: [String] -> M.Map YamlLight YamlLight -> [M.Map YamlLight YamlLight]
-getOverridesList overrides realOverrides =
-    catMaybes $ map getOverride overrides where
-        getOverride o = M.lookup (YStr $ U.fromString o) realOverrides >>= unMap
-
-overrideFields
-    :: [String]
-    -> M.Map YamlLight YamlLight
-    -> M.Map YamlLight YamlLight
-    -> M.Map YamlLight YamlLight
-overrideFields fieldNames first second = foldl overrideField first fieldNames where
-    overrideField config field =
-        let yField = YStr $ U.fromString field in
-        case M.lookup yField second of
-          Nothing -> config
-          Just v -> M.insert yField v config
-
-readWait :: M.Map YamlLight YamlLight -> Maybe [Wait]
-readWait =
-    flip M.foldlWithKey (return []) $ \waits key val ->
-    do ws <- waits
-       keyStr <- unStr key
-       w <-
-           case U.toString keyStr of
-             "port" ->
-                 do portStr <- unStr val
-                    port <- readMaybe $ U.toString portStr
-                    return $ Wait $ Port port
-             _ -> Nothing
-       return $ w : ws

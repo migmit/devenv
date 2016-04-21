@@ -4,19 +4,35 @@ targets:
     directory: kinja-core
     dependencies:
       - profile
-    shell: sbt -Dconfig.file=conf/application-dbdev-eu.conf clean compile test 'run 9001'
+    shell: sbt -Dconfig.file={config} clean compile test 'run 9001'
     wait:
       port: 9001
     init: curl -f 'http://apilocal.kinja.dev:9001/api/core/post/1673191330'
     title: core
     error: error-core
+    overrides:
+      quick:
+        shell: sbt -Dconfig.file={config} compile 'run 9001'
+    variables:
+      config: conf/application-dbdev-eu.conf
+      overrides:
+        ny:
+          config: conf/application-dbdev.conf
   profile:
     directory: kinja-profile
-    shell: sbt -Dconfig.file=conf/application-dbdev-eu.conf clean compile test 'run 9040'
+    shell: sbt -Dconfig.file={config} clean compile test 'run 9040'
     wait:
       port: 9040
     init: curl -f 'http://apilocal.kinja.dev:9040/api/profile/user/5756194420839655003'
     error: error-profile
+    overrides:
+      quick:
+        shell: sbt -Dconfig.file={config} compile 'run 9040'
+    variables:
+      config: conf/application-dbdev-eu.conf
+      overrides:
+        ny:
+          config: conf/application-dbdev.conf
   mantle:
     directory: kinja-mantle
     dependencies:
@@ -27,84 +43,6 @@ targets:
     pause: 60
     init: curl -f 'http://migmit-kinja.kinja.dev:9000/'
     error: error-mantle
-  core-quick:
-    directory: kinja-core
-    dependencies:
-      - profile-quick
-    shell: sbt -Dconfig.file=conf/application-dbdev-eu.conf compile 'run 9001'
-    wait:
-      port: 9001
-    init: curl -f 'http://apilocal.kinja.dev:9001/api/core/post/1673191330'
-    title: core
-    error: error-core
-  profile-quick:
-    directory: kinja-profile
-    shell: sbt -Dconfig.file=conf/application-dbdev-eu.conf compile 'run 9040'
-    wait:
-      port: 9040
-    init: curl -f 'http://apilocal.kinja.dev:9040/api/profile/user/5756194420839655003'
-    error: error-profile
-  mantle-quick:
-    directory: kinja-mantle
-    dependencies:
-      - core-quick
-    shell: sbt -Dconfig.file=conf/application-coredev.conf compile 'run 9000'
-    wait:
-      port: 9000
-    pause: 60
-    init: curl -f 'http://migmit-kinja.kinja.dev:9000/'
-    error: error-mantle
-  core-us:
-    directory: kinja-core
-    dependencies:
-      - profile-us
-    shell: sbt -Dconfig.file=conf/application-dbdev.conf clean compile test 'run 9001'
-    wait:
-      port: 9001
-    init: curl -f 'http://apilocal.kinja.dev:9001/api/core/post/1673191330'
-    title: core
-    error: error-core
-  profile-us:
-    directory: kinja-profile
-    shell: sbt -Dconfig.file=conf/application-dbdev.conf clean compile test 'run 9040'
-    wait:
-      port: 9040
-    init: curl -f 'http://apilocal.kinja.dev:9040/api/profile/user/5756194420839655003'
-    error: error-profile
-  mantle-us:
-    directory: kinja-mantle
-    dependencies:
-      - core-us
-    shell: sbt -Dconfig.file=conf/application-coredev.conf clean compile test 'run 9000'
-    wait:
-      port: 9000
-    pause: 60
-    init: curl -f 'http://migmit-kinja.kinja.dev:9000/'
-    error: error-mantle
-  core-us-quick:
-    directory: kinja-core
-    dependencies:
-      - profile-us-quick
-    shell: sbt -Dconfig.file=conf/application-dbdev.conf compile 'run 9001'
-    wait:
-      port: 9001
-    init: curl -f 'http://apilocal.kinja.dev:9001/api/core/post/1673191330'
-    title: core
-    error: error-core
-  profile-us-quick:
-    directory: kinja-profile
-    shell: sbt -Dconfig.file=conf/application-dbdev.conf compile 'run 9040'
-    wait:
-      port: 9040
-    init: curl -f 'http://apilocal.kinja.dev:9040/api/profile/user/5756194420839655003'
-    error: error-profile
-  mantle-us-quick:
-    directory: kinja-mantle
-    dependencies:
-      - core-us-quick
-    shell: sbt -Dconfig.file=conf/application-coredev.conf compile 'run 9000'
-    wait:
-      port: 9000
-    pause: 60
-    init: curl -f 'http://migmit-kinja.kinja.dev:9000/'
-    error: error-mantle
+    overrides:
+      quick:
+        shell: sbt -Dconfig.file=conf/application-coredev.conf compile 'run 9000'

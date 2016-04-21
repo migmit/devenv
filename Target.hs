@@ -1,10 +1,8 @@
 {-# LANGUAGE GADTs #-}
 module Target where
-import Data.Map (Map)
 import Data.Set (Set)
-import Data.Yaml.YamlLight (YamlLight)
 
-import FailureOr
+import Yaml
 
 type TargetName = String
 
@@ -12,8 +10,7 @@ data ExecResultDetails = ERDOK | ERDFailed | ERDFailedInit | ERDAlreadyRuns
 data ExecResult = ExecResult {erContinue :: Bool, erDetails :: ExecResultDetails}
 
 class Show t => IsTarget t where
-    readYamlTarget ::
-        [String] -> TargetName -> FilePath -> Map YamlLight YamlLight -> FailureOr t
+    readYamlTarget :: TargetName -> FilePath -> YamlMap -> YamlM t
     dependencies :: t -> Set TargetName
     checkTarget :: t -> TargetName -> IO (Maybe String)
     executeOneTarget :: Bool -> Bool -> String -> TargetName -> t -> IO ExecResult

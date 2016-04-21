@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 module FailureOr where
-import Control.Monad (ap, liftM2)
+import Control.Applicative(Alternative(empty, (<|>)))
+import Control.Monad (MonadPlus, ap, liftM2)
 import Control.Exception (throwIO)
 
 data FailureOr a = FailureOr String | NoFailure a deriving Functor
@@ -15,6 +16,11 @@ instance Monad FailureOr where
 instance Monoid a => Monoid (FailureOr a) where
     mempty = return mempty
     mappend = liftM2 mappend
+instance Alternative FailureOr where
+    empty = fail ""
+    FailureOr _ <|> f = f
+    f@(NoFailure _) <|> _ = f
+instance MonadPlus FailureOr
 recoverFromFailure :: a -> FailureOr a -> a
 recoverFromFailure d (FailureOr _) = d
 recoverFromFailure _ (NoFailure a) = a

@@ -1,5 +1,5 @@
 {-# LANGUAGE GADTs #-}
-module Wait where
+module Wait(Wait(Wait), readWaits, waitFor) where
 import Control.Concurrent (threadDelay)
 import Control.Exception (IOException, try)
 import Control.Monad (forM)

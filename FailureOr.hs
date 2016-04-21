@@ -1,5 +1,5 @@
 {-# LANGUAGE DeriveFunctor #-}
-module FailureOr where
+module FailureOr(FailureOr, guardIO, orErr, recoverFromFailure, runFailureOr) where
 import Control.Applicative(Alternative(empty, (<|>)))
 import Control.Monad (MonadPlus, ap, liftM2)
 import Control.Exception (throwIO)
@@ -24,9 +24,6 @@ instance MonadPlus FailureOr
 recoverFromFailure :: a -> FailureOr a -> a
 recoverFromFailure d (FailureOr _) = d
 recoverFromFailure _ (NoFailure a) = a
-recoverMaybe :: FailureOr a -> Maybe a
-recoverMaybe (FailureOr _) = Nothing
-recoverMaybe (NoFailure a) = return a
 runFailureOr :: FailureOr a -> IO a
 runFailureOr (FailureOr s) = throwIO $ userError s
 runFailureOr (NoFailure a) = return a

@@ -1,4 +1,4 @@
-module ScreenTarget where
+module ScreenTarget(ScreenTarget) where
 import Control.Concurrent (threadDelay)
 import Control.Monad (forM, forM_)
 import Data.Maybe (fromMaybe)
@@ -26,10 +26,6 @@ data ScreenTarget = ScreenTarget {
       targetError :: Maybe FilePath,
       targetPause :: Maybe Int
     } deriving Show
-
-requiredFields :: [String]
-requiredFields =
-    ["directory", "shell", "pause", "title", "dependencies", "wait", "init", "error"]
 
 instance IsTarget ScreenTarget where
     readYamlTarget key baseDir yamlMap =

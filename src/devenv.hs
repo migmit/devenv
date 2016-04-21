@@ -162,22 +162,25 @@ overHelpMessage = "Use overridden values"
 runOptionsParser :: O.Parser RunOptions
 runOptionsParser =
     RunOptions <$>
-    O.switch (O.short 'o' <> O.help runHelpMessage) <*>
-    O.switch (O.short 'a' <> O.help addHelpMessage) <*>
+    O.switch (O.short 'j' <> O.long "just" <> O.help runHelpMessage) <*>
+    O.switch (O.short 'a' <> O.long "add" <> O.help addHelpMessage) <*>
     O.some (O.argument O.str (O.metavar "Target..."))
                         
 optionsParser :: O.Parser ProgramOptions
 optionsParser =
     ProgramOptions <$>
-    O.optional
-         (O.strOption (O.short 'f' <> O.metavar "CONFIG" <> O.help configHelpMessage)) <*>
-    O.optional
-         (O.strOption (O.short 's' <> O.metavar "SESSION" <> O.help sessionHelpMessage)) <*>
-    O.many
-         (O.strOption (O.short '@' <> O.metavar "OVERRIDE" <> O.help overHelpMessage)) <*>
+    O.optional (O.strOption
+                     (O.short 'f' <> O.long "file" <>
+                       O.metavar "CONFIG" <> O.help configHelpMessage)) <*>
+    O.optional (O.strOption
+                     (O.short 's' <> O.long "session" <>
+                       O.metavar "SESSION" <> O.help sessionHelpMessage)) <*>
+    O.many (O.strOption (O.short 'o' <> O.long "override" <>
+                          O.metavar "OVERRIDE" <> O.help overHelpMessage)) <*>
     (
      RunMode <$> runOptionsParser
-     <|> KillMode <$ O.flag' () (O.short 'k' <> O.help "Kill everything and clean up")
+     <|> KillMode <$ O.flag' () (O.short 'k' <> O.long "kill" <>
+                                  O.help "Kill everything and clean up")
     )
 
 technicalParser :: O.Parser TechnicalOptions

@@ -3,8 +3,227 @@
 <title>devenv</title>
 </head>
 <body>
-<a href="https://github.com/migmit/devenv/releases/download/0.0.9/devenv">OSX binary</a>
-<br />
-<a href="https://github.com/migmit/devenv">GitHub repository</a>
+<h1>Devenv</h1>
+<h2>A tool for running several services at once</h2>
+<h3>Invocation</h3>
+<p>Basic invocation is this:
+<pre>devenv <i>target</i></pre>
+where <i>target</i> is the name of the project you need to run.
+<code>Devenv</code> would run this project and all of it's dependencies in a detached <code>screen</code> session with the name <i>devenv</i>.
+Each of the projects would run in a separate window within this session.
+You can attach to that session and see how it's going, using, for example,
+<pre>screen -dr</pre>
+See <code>screen</code> documentation for more information.</p>
+<p><a name="switch_k" />You can destroy the session and kill all processes running within it with a simple command
+<pre>devenv -k</pre></p>
+<p>You can run several projects (along with their dependencies) at once:
+<pre>devenv <i>target<sub>1</sub></i> <i>target<sub>2</sub></i></pre></p>
+<p>If the screen session already exists, you can add projects to it with a <code>-a</code> switch:
+<pre>devenv -a <i>target<sub>3</sub></i></pre>
+That way <code>devenv</code> won't try to start a project that is already running.</p>
+<p>You can also disable dependency tracking completely:
+<pre>devenv -j <i>target</i></pre>
+In this case, only the projects (targets) listed in the command line would run.</p>
+<p>It's possible to use a different session name:
+<pre>devenv -s <i>session_name</i> <i>target</i></pre>
+This switch can be combined with <a href="#switch_k"><code>-k</code></a>.</p>
+<h3>Configuration</h3>
+<code>devenv</code> uses single configuration file, which lists all the projects with all steps necessary to run those.
+By default, this file is named <code>.devenv.yml</code> and is placed in the user's home directory.
+You can specify another configuration file with the <code>-f</code> switch:
+<pre>devenv -f <i>config_file.yml</i> target</pre>
+This switch can be combined with all other parameters listed above.</p>
+<p>Configuration file uses <a href="http://yaml.org/">YAML</a> syntax.
+The reader is supposed to be familiar with YAML.</p>
+<h4>Configuration example</h4>
+<pre>
+basedir: <i>projects/main/src</i>
+init: <i>setup_vpn -u current_user</i>
+targets:
+  project_1:
+    directory: <i>pr1</i>
+    shell: <i>run_project -z funny</i>
+    wait:
+      port: <i>8080</i>
+    pause: <i>60</i>
+    init: <i>init_projects -x or_not</i>
+    title: <i>main</i>
+    error: <i>err_pr_1</i>
+  project_2:
+    directory: <i>pr2</i>
+    dependencies:
+      - project_1
+      - project_3
+    ...
+</pre>
+<h4>Configuration syntax</h4>
+<p><a name="param_basedir" />The <code>basedir</code> parameter specifies the directory within which all projects reside.
+This can be an absolute or relative path.
+If it's relative, then the base directory for it is the directory in which the configuration file is found.</p>
+<p><code>init</code> is a shell command that should be run before all the projects.
+It's run in the same directory in which <code>devenv</code> is invoked.</p>
+<p><code>targets</code> map lists all projects that <code>devenv</code> can run.
+Each project corresponds to one entry in this map, with the name being the intended name of a project, and the value being another map, listing all the parameters of it.</p>
+<p>The <code>directory</code> parameter is the directory in which the project should be running.
+It can be an absolute path, or a path relative to the <a href="#param_basedir"><code>basedir</code></a> above.</p>
+<p><code>shell</code> is a shell command which runs the project.
+It is executed in the detached <code>screen</code> session.
+It's output is not shown, unless you attach to that session.</p>
+<p><code>wait</code> is a list of things <code>devenv</code> would be waiting for, while the project starts.
+Only when all of them are present, <code>devenv</code> would consider the project running.
+Currently the only thing that <code>devenv</code> can wait for is one port with arbitrary number, given in the <code>port</code> parameter.</p>
+<p>After the project is successfully running, <code>devenv</code> would pause for the number of seconds, specified in the <code>pause</code> parameter.
+If that is not necessary, this parameter should be omitted.</p>
+<p>After that timeout has passed, or, if it's absent, after the wait is over and the project is running, the command specified in the <code>init</code> parameter is run.
+It is not run in the <code>screen</code> session, and would normally communicate with the project in some other way.</p>
+<p>Each project runs in it's own <code>screen</code> window within one session, and that window has a title given in the <code>title</code> parameter.
+If this parameter is omitted, the title of the window would be the same as the name of the project.</p>
+<p><code>error</code> is a file that <code>devenv</code> creates in the project directory and removes after the project finishes running.
+It helps determine if the project finished prematurely, or if it's already running.
+Omitting this parameter would result in <code>devenv</code> assuming no errors occured while starting the project, and that the project wasn't already running before.</p>
+<p><code>devenv</code> tracks dependencies between projects.
+The <code>dependencies</code> field is a list of other projects that should be run before this one.
+No projects would run if a circular dependency is detected, and an error would be reported.</p>
+<h3>Variables and overrides</h3>
+<p><code>devenv</code> supports two features allowing to modify projects' behaviour.</p>
+<h4>Overrides</h4>
+<p>In the command line any number of override names can be listed using <code>-o</code> switch:
+<pre>devenv -o override_1 -o override_2 target</pre>
+Each time when <code>devenv</code> reads the value of any key in the configuration file, it checks if the map, in which this key is, has an <code>overrides</code> key.
+If such a key is present, and the corresponding value is a map, then it's elements are given a chance to override the value that is being fetched.
+Only the overrides with names listed in the command line are used.
+Those that do not provide a new value for that key are ignored.
+If there are several possible overrides, then the one with the name being the last in the command line is used.</p>
+<p>Example:
+<pre>
+...
+    shell: run_project
+    wait:
+      port: 8080
+    overrides:
+      fast:
+        shell: run_project --skip-slow-checks
+      and:
+        shell: run_project --extra-safe
+        port: 8081
+      furious:
+        port: 8888
+</pre>
+Normally, <code>devenv</code> would start the project using the command <code>run_project</code>, and wait for the port <code>8080</code> to become open.
+If, however, it is run as <code>devenv -o fast</code>, then it would use the command <code>run_project --skip-slow-checks</code> to start the project,
+but it would still wait for the port <code>8080</code>.
+If it is run as <code>devenv -o fast -o and -o furious</code>, then the command <code>run_project --extra-safe</code> would be used,
+but <code>devenv</code> would wait for the port <code>8888</code> instead.</p>
+<p>Overrides only apply to the same YAML map they are members of; they do not change anything in the subtrees below that map, or in other maps, not related to that one.
+Each map can contain it's own set of overrides.
+Not all overrides must be listed in the <code>overrides</code> map; those that are not listed are assumed to be empty.</p>
+<p>There is no possible way to limit overrides to one particular project or other kind of map.
+All overrides specified in the command line are applied to everything in the configuration file.</p>
+<h4>Variables</h4>
+<p>All string parameters in the configuration file can use variables. The variable name is enclosed in curly braces: <code>{var_name}</code>.
+Each YAML map can provide a <code>variables</code> map, listing the values of all variables.
+Those values also should be strings.</p>
+<p>Example:
+<pre>
+...
+    shell: run_project --listen-to {port_number}
+    wait:
+      port: {port_number}
+    variables:
+      port_number: 8080
+</pre>
+In this example, command line <code>run_project --listen-to 8080</code> would be used to start the project,
+and <code>devenv</code> would wait for the port <code>8080</code> to become open.</p>
+<p>Unlike overrides, variables can be inherited: variable is not only substituted in any string that is in the same map, but also in the whole subtree under it.
+Variables specified on the deeper level take precedence:
+<pre>
+targets:
+  pr_1:
+    shell: run_1 {arg}
+    ...
+  pr_2:
+    shell: run_2 {arg}
+    ...
+  pr_3:
+    shell: run_3 {arg}
+    variables:
+      arg: foo
+    ...
+  variables:
+    arg: bar
+</pre>
+In this example, targets <code>pr_1</code> and <code>pr_2</code> would be started with command lines <code>run_1 bar</code> and <code>run_2 bar</code> respectively,
+but the target <code>pr_3</code> would use the command line <code>run_3 foo</code> instead.
+<h4>Interaction between variables and overrides</h4>
+Overrides can not contain variables or overrides on the first level. So, in case of
+<pre>
+  ...
+  overrides:
+    name:
+      foo: bar{baz}
+      overrides:
+        name:
+          foo: quux
+      variables
+        baz: qaz
+</pre>
+only the literal string <code>bar{baz}</code> would be used as an override for the key <code>foo</code>.
+Internal <code>overrides</code> and <code>variables</code> keys would be regarded as unrelated overrides with names <code>overrides</code> and <code>variables</code>.</p>
+<p>On the other hand, there is nothing wrong with values of overrides containing overrides and variables of their own:
+<pre>
+  ...
+  overrides:
+    foo:
+      shell: run_1
+      overrides:
+        bar:
+          shell: run_2
+</pre>
+In this case, if an override name <code>foo</code> is given in the command line, command <code>run_1</code> would be used,
+but if both <code>foo</code> and <code>bar</code> are given, command <code>run_2</code> would be used instead.
+If <code>bar</code> is given in the command line, but <code>foo</code> is not, no overrides would be used, unless <code>bar</code> is mentioned elsewhere in the file.</p>
+<p>Overrides also can refer to the variables that would be used even without override:
+<pre>
+  ...
+  shell: run_project {foo}
+  overrides:
+    quick:
+      shell: run_project --quick {foo}
+  variables
+    foo: bar
+</pre>
+If no override name is given, command line <code>run_project bar</code> would be used,
+but if override <code>quick</code> is in effect, it would be <code>run_project --quick bar</code>.</p>
+<p>Variables, on the other hand, can't refer to other variables. Their values are substituted literally, with no further processing.
+<pre>
+...
+  shell: run {foo}
+  variables:
+    foo: {bar}
+    bar: baz
+</pre>
+In this case the command line would be <code>run {bar}</code>, with variable <code>bar</code> not being substituted.</p>
+<p>Variables, however, can use overrides.
+<pre>
+...
+  shell: run {foo}
+  overrides:
+    bar:
+      shell: run_bar {foo}
+  variables
+    foo: baz
+    overrides:
+      quux:
+        foo: qaz
+</pre>
+Normally, overrides would be ignored, and the command <code>run baz</code> used.
+If override <code>bar</code> is in effect, the command would be <code>run_bar baz</code>.
+If override <code>quux</code> is in effect, the command would be <code>run qaz</code>
+And, at last, if both overrides are listed on the command line, like <code>devenv -o bar -o quux</code>, then it would be <code>run_bar qaz</code>.
+<h3>Links</h3>
+<ul>
+<li><a href="https://github.com/migmit/devenv/releases/download/0.0.9/devenv">OSX binary</a></li>
+<li><a href="https://github.com/migmit/devenv">GitHub repository</a></li>
+</ul>
 </body>
 </html>

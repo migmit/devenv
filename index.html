@@ -15,7 +15,9 @@ You can attach to that session and see how it's going, using, for example,
 <pre>screen -dr</pre>
 See <code>screen</code> documentation for more information.</p>
 <p><a name="switch_k" />You can destroy the session and kill all processes running within it with a simple command
-<pre>devenv -k</pre></p>
+<pre>devenv -k</pre>
+or you can specify which project to kill, while letting others run:
+<pre>devenv -k <i>target<sub>1</sub></i> <i>target<sub>2</sub></i>...</pre></p>
 <p>You can run several projects (along with their dependencies) at once:
 <pre>devenv <i>target<sub>1</sub></i> <i>target<sub>2</sub></i></pre></p>
 <p>If the screen session already exists, you can add projects to it with a <code>-a</code> switch:
@@ -222,8 +224,17 @@ If override <code>quux</code> is in effect, the command would be <code>run qaz</
 And, at last, if both overrides are listed on the command line, like <code>devenv -o bar -o quux</code>, then it would be <code>run_bar qaz</code>.
 <h3>Links</h3>
 <ul>
-<li><a href="https://github.com/migmit/devenv/releases/download/0.0.9/devenv">OSX binary</a></li>
+<li>OSX binary
+<ol>  
+<li><a href="https://github.com/migmit/devenv/releases/download/0.0.9/devenv">Version 0.0.9</a></li>
+<li><a href="https://github.com/migmit/devenv/releases/download/0.1.0/devenv">Version 0.1.0</a></li>
+</ol>
+</li>
 <li><a href="https://github.com/migmit/devenv">GitHub repository</a></li>
+</ul>
+<h3>Acknowledgments</h3>
+<ul>
+<li>Casey Speer — suggesting additional arguments for the <code>-k</code> switch.</li>
 </ul>
 </body>
 </html>

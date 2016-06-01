@@ -133,7 +133,12 @@ data RunOptions =
       runTargets :: [TargetName]
     }
 
-data OperationMode = RunMode RunOptions | KillMode
+data KillOptions =
+    KillOptions {
+      killTargets :: Maybe [TargetName]
+    }
+
+data OperationMode = RunMode RunOptions | KillMode KillOptions
 
 data TechnicalOptions =
     TechnicalOptions {
@@ -165,6 +170,12 @@ runOptionsParser =
     O.switch (O.short 'j' <> O.long "just" <> O.help runHelpMessage) <*>
     O.switch (O.short 'a' <> O.long "add" <> O.help addHelpMessage) <*>
     O.some (O.argument O.str (O.metavar "Target..."))
+
+killOptionsParser :: O.Parser KillOptions
+killOptionsParser =
+    KillOptions <$
+    O.flag' () (O.short 'k' <> O.long "kill" <> O.help "Kill everything and clean up") <*>
+    O.optional (O.some $ O.argument O.str (O.metavar "Target..."))
                         
 optionsParser :: O.Parser ProgramOptions
 optionsParser =
@@ -179,8 +190,7 @@ optionsParser =
                           O.metavar "OVERRIDE" <> O.help overHelpMessage)) <*>
     (
      RunMode <$> runOptionsParser
-     <|> KillMode <$ O.flag' () (O.short 'k' <> O.long "kill" <>
-                                  O.help "Kill everything and clean up")
+     <|> KillMode <$> killOptionsParser
     )
 
 technicalParser :: O.Parser TechnicalOptions
@@ -212,11 +222,17 @@ main =
          PO options -> userProcessing options
          TO options -> techProcessing options
 
-cleanUp :: String -> Bool -> Config -> IO ()
-cleanUp sessionName sessionExists config =
+cleanUp :: KillOptions -> String -> Bool -> Config -> IO ()
+cleanUp (KillOptions {killTargets = Nothing}) sessionName sessionExists config =
     do let cmdArgs = ["-S", sessionName, "-X", "quit"]
        when sessionExists $ callProcess "screen" cmdArgs
        forM_ (configTargets config) $ \(Target t) -> cleanOneTarget t
+cleanUp (KillOptions {killTargets = Just targetNames}) sessionName sessionExists config =
+    do targets <- runFailureOr $ getSimpleTargetList config targetNames
+       forM_ targets $ \(name, Target target) ->
+           do let cmdArgs = ["-S", sessionName, "-X", "eval", "select " ++ name, "kill"]
+              when sessionExists $ callProcess "screen" cmdArgs
+              cleanOneTarget target
 
 userProcessing :: ProgramOptions -> IO ()
 userProcessing options =
@@ -236,7 +252,7 @@ userProcessing options =
                     do (e, _, _) <- readProcessWithExitCode "bash" ["-c", i] ""
                        guardIO (e == ExitSuccess) "failed on global init"
                 startTargets sessionName config runOptions
-         KillMode -> cleanUp sessionName sessionExists config
+         KillMode killOptions -> cleanUp killOptions sessionName sessionExists config
 
 techProcessing :: TechnicalOptions -> IO ()
 techProcessing options =
